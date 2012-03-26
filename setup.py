@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup
 
 __version__ = '0.1'
 
@@ -8,8 +8,8 @@ setup(name='s3grep',
       license='MIT',
       author='Barnaby Gray',
       author_email='barnaby@pickle.me.uk',
-      url='http://github.com/barnybug/s3grep/',
-      requires=['boto'],
+      url='http://loads.pickle.me.uk/s3grep/',
+      install_requires=['boto'],
       scripts=['s3grep'],
       classifiers=[
         "Development Status :: 3 - Alpha",
