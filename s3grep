@@ -1,7 +1,8 @@
-#!/usr/bin/python
+#! /usr/bin/python
 
 import sys
 import re
+import zlib
 import time
 import argparse
 import boto.s3
@@ -14,13 +15,13 @@ def S3Path(p):
     if not m:
         raise ValueError, 'invalid s3 url - should be "s3://bucketname/prefix"'
     return m.groups()
-    
+
 def Regex(r):
     try:
         return re.compile(r)
     except re.error, ex:
         raise ValueError, str(ex)
-        
+
 class Worker(object):
     pass
 
@@ -29,44 +30,58 @@ class LineBuffer(object):
     def __init__(self, fin):
         self.fin = fin
         self.buf = []
-        
+        if self.fin.name.endswith('gz'):
+            self.decomp = zlib.decompressobj(16+zlib.MAX_WBITS)
+        else:
+            self.decomp = None
+
     def __iter__(self):
         return self
-    
+
     def readline(self):
         if len(self.buf) <= 1:
-            more = self.fin.read().split('\n')
+            if not self.decomp:
+                more = self.fin.read().split('\n')
+            else:
+                CHUNK_SIZE= 1000*1024
+                more = []
+                while True:
+                    chunk = self.fin.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    more += self.decomp.decompress(chunk).split('\n')
+
             if self.buf and more:
                 # join across the boundary
                 self.buf[0] = self.buf[0] + more.pop(0)
             self.buf.extend(more)
-        
+
         if self.buf:
             return self.buf.pop(0)
         else:
             return ''
-        
+
     def next(self):
         l = self.readline()
         if l:
             return l
         else:
             raise StopIteration
-        
+
 class Worker(object):
     def __init__(self, bucket_name, regex, args):
         s3 = boto.connect_s3()
         self.bucket = s3.get_bucket(bucket_name)
         self.regex = regex
         self.args = args
-        
+
     def __call__(self, key_name):
         key = self.bucket.get_key(key_name)
-        
+
         nbytes = nlines = nmatches = 0
         if self.args.verbose:
             print >> sys.stderr, 'Scanning: %s' % (key.name)
-        
+
         if self.regex.pattern == '.':
             # optimise special case - handy for using conventional grep, for example
             key.get_contents_to_file(sys.stdout)
@@ -81,7 +96,7 @@ class Worker(object):
                     else:
                         print line
                     nmatches += 1
-                    
+
         return nbytes, nlines, nmatches
 
 def initialize_worker(*args):
@@ -91,7 +106,7 @@ def initialize_worker(*args):
     except KeyboardInterrupt:
         # leave cleanly on keyboard interrupt
         return
-    
+
 def call_worker(args):
     global worker
     try:
@@ -109,9 +124,9 @@ def main():
     # grep options
     parser.add_argument('-v', '--invert', action='store_true', help="invert match (ie. return lines that do not match)")
     parser.add_argument('-H', '--with-filename', action='store_true', help="Print the file name for each match.")
-    
+
     args = parser.parse_args()
-    
+
     # setup
     nfiles = nlines = nbytes = nmatches = 0
     p = args.path[0]
@@ -125,7 +140,7 @@ def main():
             print >> sys.stderr, 'Searching bucket: %s' % (p[0])
         s3 = boto.connect_s3()
         bucket = s3.get_bucket(p[0])
-        
+
         keys = bucket.list(prefix=p[1])
         jobs = ( k.name for k in keys )
         # do the actual work
@@ -140,7 +155,7 @@ def main():
     else:
         pool.close()
         pool.join()
-    
+
     end = time.time()
     print >> sys.stderr, 'Scanned: %d files, %d lines, %d bytes, %d matches, took %dms' % (nfiles, nlines, nbytes, nmatches, (end-start)*1000)
 
