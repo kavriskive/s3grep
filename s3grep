@@ -81,6 +81,8 @@ class Worker(object):
                     else:
                         print line
                     nmatches += 1
+                if nbytes >= key.size:
+                    break
                     
         return nbytes, nlines, nmatches
 
