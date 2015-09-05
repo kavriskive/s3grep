@@ -9,7 +9,7 @@ setup(name='s3grep',
       author='Barnaby Gray',
       author_email='barnaby@pickle.me.uk',
       url='http://loads.pickle.me.uk/s3grep/',
-      install_requires=['boto'],
+      install_requires=['boto', 'progressbar'],
       scripts=['s3grep'],
       classifiers=[
         "Development Status :: 3 - Alpha",

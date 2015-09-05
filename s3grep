@@ -9,6 +9,7 @@ import boto.s3
 from multiprocessing import Pool
 from functools import wraps
 import signal
+from progressbar import *
 
 def S3Path(p):
     m = re.match(r's3://([^/]+)/(.+)', p)
@@ -97,6 +98,9 @@ class Worker(object):
                         print line
                     nmatches += 1
 
+                if nbytes >= key.size:
+                    break
+                    
         return nbytes, nlines, nmatches
 
 def initialize_worker(*args):
@@ -121,6 +125,7 @@ def main():
     parser.add_argument('regex', nargs=1, type=Regex, help="regular expression to search for")
     parser.add_argument('--verbose', action='store_true', help="verbose output")
     parser.add_argument('-p', '--processes', type=int, default=6, help="number of processes to run")
+    parser.add_argument('-s', '--status', action='store_true', help="progress bar status. Recommend you redirect stdout to a file to see progress.")
     # grep options
     parser.add_argument('-v', '--invert', action='store_true', help="invert match (ie. return lines that do not match)")
     parser.add_argument('-H', '--with-filename', action='store_true', help="Print the file name for each match.")
@@ -143,18 +148,35 @@ def main():
 
         keys = bucket.list(prefix=p[1])
         jobs = ( k.name for k in keys )
+
+        # Total size for progress bar
+        totalsize = 0
+        for k in keys:
+            totalsize += k.size
+
+        if args.status:
+            widgets = ['Total: ', Percentage(), ' ', Bar(marker=RotatingMarker())]
+            pbar = ProgressBar(widgets=widgets, maxval=totalsize).start()
+
         # do the actual work
         for b, l, m in pool.imap(call_worker, jobs):
             nfiles += 1
             nlines += l
             nbytes += b
             nmatches += m
+
+            if args.status:
+                pbar.update(nbytes)
+
     except KeyboardInterrupt:
         pool.terminate()
         pool.join()
     else:
         pool.close()
         pool.join()
+    
+    if args.status:
+        pbar.finish()
 
     end = time.time()
     print >> sys.stderr, 'Scanned: %d files, %d lines, %d bytes, %d matches, took %dms' % (nfiles, nlines, nbytes, nmatches, (end-start)*1000)
